@@ -72,11 +72,9 @@ spec:
       - name: sonarqube-conf
         emptyDir: {}
       - name: sonarqube-data
-        persistentVolumeClaim:
-          claimName: sonarqube-data
+        emptyDir: {}
       - name: sonarqube-extensions
-        persistentVolumeClaim:
-          claimName: sonarqube-extensions
+        emptyDir: {}
       - name: sonarqube-logs
         emptyDir: {}
 ---
@@ -113,29 +111,3 @@ spec:
     app: sonarqube
     name: sonarqube
   type: ClusterIP
----
-kind: PersistentVolumeClaim
-apiVersion: v1
-metadata:
-  name: sonarqube-data
-  labels:
-    app: sonarqube
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
----
-kind: PersistentVolumeClaim
-apiVersion: v1
-metadata:
-  name: sonarqube-extensions
-  labels:
-    app: sonarqube
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi

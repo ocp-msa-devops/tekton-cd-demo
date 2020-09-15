@@ -24,8 +24,8 @@ On every push to the `spring-petclinic` git repository on Gogs git server, the f
 
 ![Pipeline Diagram](docs/images/pipeline-diagram.svg)
 
-
-
+# Version
+Currently valid in openshift 4.5.8 and tekton 0.4.0, if you use tekton 0.5.0, you need to repair two files, see tekton-0.5.0/
 # Deploy
 
 1. Get an OpenShift cluster via https://try.openshift.com
@@ -34,16 +34,25 @@ On every push to the `spring-petclinic` git repository on Gogs git server, the f
 1. Deploy the demo
 
     ```
-    $ oc new-project demo
     $ git clone https://github.com/siamaksade/tekton-cd-demo 
-    $ demo.sh install
+    $ cd tekton-cd-demo
+    use "demo" prefix name with storage
+    $ ./deploy.sh install
+    or use custom prefix name  without storage
+    $ ./deploy.sh install --project-prefix myapp --ephemeral
     ```
 
 1. Start the deploy pipeline by making a change in the `spring-petclinic` Git repository on Gogs, or run the following:
 
     ```
-    $ demo.sh start
+    run pipeline with storage
+    $ ./deploy.sh start
+    or run pipeline use custom prefix without stroage
+    $ ./deploy.sh start --project-prefix myapp --ephemeral
     ```
+
+1. uninstall the demo
+   Delete the created projects, such as demo-cicd, demo-dev, demo-stage
 
 1. Check pipeline run logs
 

@@ -3,6 +3,7 @@
 set -e -u -o pipefail
 declare -r SCRIPT_DIR=$(cd -P $(dirname $0) && pwd)
 declare PRJ_PREFIX="demo"
+declare EPHEMERAL=false
 declare COMMAND="help"
 declare CONFIG_BASE_URL=https://raw.githubusercontent.com/siamaksade/spring-petclinic-config
 
@@ -22,13 +23,23 @@ err() {
 
 while (( "$#" )); do
   case "$1" in
-    install|uninstall|start)
+    install|start)
       COMMAND=$1
       shift
       ;;
     -p|--project-prefix)
-      PRJ_PREFIX=$2
-      shift 2
+      if [ -n "$2" ]; then
+        PRJ_PREFIX=$2
+        shift
+        shift
+      else
+        printf 'ERROR: "--project-prefix" requires a non-empty value.\n' >&2
+        exit 255
+      fi
+      ;;
+    --ephemeral)
+      EPHEMERAL=true
+      shift
       ;;
     --)
       shift
@@ -50,19 +61,19 @@ command.help() {
   cat <<-EOF
 
   Usage:
-      demo [command] [options]
+      deploy [command] [options]
   
   Example:
-      demo install --project-prefix mydemo
+      deploy install --project-prefix mydemo --ephemeral
   
   COMMANDS:
       install                        Sets up the demo and creates namespaces
-      uninstall                      Deletes the demo namespaces
       start                          Starts the demo pipeline
       help                           Help about this command
 
   OPTIONS:
       -p|--project-prefix [string]   Prefix to be added to demo project names e.g. PREFIX-dev
+      --ephemeral   Optional    Deploy demo without persistent storage. Default false
 EOF
 }
 
@@ -85,13 +96,26 @@ command.install() {
   oc policy add-role-to-user edit system:serviceaccount:$cicd_prj:pipeline -n $stage_prj
 
   info "Deploying CI/CD infra to $cicd_prj namespace"
-  oc apply -f cd -n $cicd_prj
+  if [ "${EPHEMERAL}" == "true" ] ; then
+    oc apply -f cd/gogs-ephemeral.yaml -n $cicd_prj
+    oc apply -f cd/nexus-ephemeral.yaml -n $cicd_prj
+    oc apply -f cd/reports-repo-ephemeral.yaml -n $cicd_prj
+    oc apply -f cd/sonarqube-ephemeral.yaml -n $cicd_prj
+  else
+    oc apply -f cd/gogs.yaml -n $cicd_prj
+    oc apply -f cd/nexus.yaml -n $cicd_prj
+    oc apply -f cd/reports-repo.yaml -n $cicd_prj
+    oc apply -f cd/sonarqube.yaml -n $cicd_prj
+  fi
+  sleep 5
   GOGS_HOSTNAME=$(oc get route gogs -o template --template='{{.spec.host}}' -n $cicd_prj)
 
   info "Deploying pipeline and tasks to $cicd_prj namespace"
   oc apply -f tasks -n $cicd_prj
   oc apply -f config/maven-configmap.yaml -n $cicd_prj
-  oc apply -f pipelines/pipeline-pvc.yaml -n $cicd_prj
+  if [ "${EPHEMERAL}" == "false" ] ; then
+    oc apply -f pipelines/pipeline-pvc.yaml -n $cicd_prj
+  fi
   oc apply -f pipelines/petclinic-tests-git-resource.yaml -n $cicd_prj
   sed "s/demo-dev/$dev_prj/g" pipelines/pipeline-deploy-dev.yaml | oc apply -f - -n $cicd_prj
   sed "s/demo-dev/$dev_prj/g" pipelines/pipeline-deploy-stage.yaml | sed -E "s/demo-stage/$stage_prj/g" | oc apply -f - -n $cicd_prj
@@ -101,8 +125,12 @@ command.install() {
   sed "s#https://github.com/siamaksade/spring-petclinic-gatling#http://$GOGS_HOSTNAME/gogs/spring-petclinic-gatling.git#g" pipelines/petclinic-tests-git-resource.yaml | oc apply -f - -n $cicd_prj
   
   oc apply -f triggers/gogs-triggerbinding.yaml -n $cicd_prj
-  oc apply -f triggers/triggertemplate.yaml -n $cicd_prj
-  sed "s/demo-dev/$dev_prj/g" triggers/eventlistener.yaml | oc apply -f - -n $cicd_prj
+  if [ "${EPHEMERAL}" == "true" ] ; then
+    oc apply -f triggers/triggertemplate-ephemeral.yaml -n $cicd_prj
+  else
+    oc apply -f triggers/triggertemplate.yaml -n $cicd_prj
+  fi
+  oc apply -f triggers/eventlistener.yaml -n $cicd_prj
 
   info "Initiatlizing git repository in Gogs and configuring webhooks"
   sed "s/@HOSTNAME/$GOGS_HOSTNAME/g" config/gogs-configmap.yaml | oc create -f - -n $cicd_prj
@@ -143,12 +171,13 @@ EOF
 }
 
 command.start() {
-  oc create -f runs/pipeline-deploy-dev-run.yaml -n $cicd_prj
+  if [ "${EPHEMERAL}" == "true" ] ; then
+    oc create -f runs/pipeline-deploy-dev-run-ephemeral.yaml -n $cicd_prj
+  else
+    oc create -f runs/pipeline-deploy-dev-run.yaml -n $cicd_prj
+  fi
 }
 
-command.uninstall() {
-  oc delete project $dev_prj $stage_prj $cicd_prj
-}
 
 main() {
   local fn="command.$COMMAND"
